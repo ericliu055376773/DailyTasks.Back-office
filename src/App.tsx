@@ -18,6 +18,18 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
+// === 計算兩個 GPS 座標距離 (公尺) - Haversine Formula ===
+function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371e3; // 地球半徑 (公尺)
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; 
+}
+
 // === 圖示組件 ===
 const I = ({ children, c = "", onClick }: any) => <svg onClick={onClick} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={c}>{children}</svg>;
 const BookOpen = ({ c }: any) => <I c={c}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></I>;
@@ -39,6 +51,7 @@ const Lock = ({ c }: any) => <I c={c}><rect x="3" y="11" width="18" height="11" 
 const Settings = ({ c }: any) => <I c={c}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></I>;
 const Camera = ({ c }: any) => <I c={c}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></I>;
 const FolderPlus = ({ c }: any) => <I c={c}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" x2="12" y1="11" y2="17"/><line x1="9" x2="15" y1="14" y2="14"/></I>;
+const MapPin = ({ c }: any) => <I c={c}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></I>;
 
 const customStyles = `
   /* 小標籤顏色 */
@@ -123,17 +136,14 @@ const getRoleCardStyle = (role: any) => {
   return baseStyle + "bg-role-default";
 };
 
-const getCardGlowClass = (role: any) => {
-  if (role === '店長') return 'card-glow-rainbow';
-  return 'border-gray-200 border-2 border-solid border-gray-100';
-};
-
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [authMode, setAuthMode] = useState<string>('login'); 
   const [currentUserRole, setCurrentUserRole] = useState<any>(null); 
   const [currentUserName, setCurrentUserName] = useState<string>('');
   const [showSecretModal, setShowSecretModal] = useState<boolean>(false);
+  const [showGpsModal, setShowGpsModal] = useState<boolean>(false); // GPS 權限模態框
+  const [isCheckingGPS, setIsCheckingGPS] = useState<boolean>(false); // GPS 驗證中的狀態
   const [secretPwd, setSecretPwd] = useState<string>('');
   const [authPassword, setAuthPassword] = useState<string>(''); 
   const [authError, setAuthError] = useState<string>(''); 
@@ -164,12 +174,12 @@ export default function App() {
 
   // 工作項目相關狀態
   const [taskRoles, setTaskRoles] = useState<any[]>([]); 
-  const [editingTaskRoles, setEditingTaskRoles] = useState<any[]>([]); // 防誤刪儲存用的局部狀態
+  const [editingTaskRoles, setEditingTaskRoles] = useState<any[]>([]); 
   const [activeTaskId, setActiveTaskId] = useState<string>('');
   const [showTaskManager, setShowTaskManager] = useState<boolean>(false);
   const [editingTasks, setEditingTasks] = useState<any[]>([]);
 
-  // 解決手機版 (iOS Safari) 輸入框點擊後自動放大且不縮回的問題
+  // 解決手機版輸入框點擊後自動放大的問題
   useEffect(() => {
     let viewportMeta = document.querySelector('meta[name="viewport"]');
     if (!viewportMeta) {
@@ -195,14 +205,12 @@ export default function App() {
         const data = d.data();
         setLearningLevelUpThreshold(data.learningLevelUpThreshold || 3); 
         
-        // 任務權限同步
         setTaskRoles(data.taskRoles || []); 
         setEditingTaskRoles(prev => prev.length === 0 && data.taskRoles?.length > 0 ? data.taskRoles : prev);
 
         setLevelRules(data.levelRules || []);
         setEditingLevelRules(prev => prev.length === 0 && data.levelRules?.length > 0 ? data.levelRules : prev);
         
-        // 讀取學習分類
         if (data.learningCategories && data.learningCategories.length > 0) {
           setCategories(data.learningCategories);
           if (!activeCategoryId) setActiveCategoryId(data.learningCategories[0].id);
@@ -213,7 +221,6 @@ export default function App() {
     return () => { unsubStores(); unsubSteps(); unsubTasks(); unsubEmp(); unsubPending(); unsubProg(); unsubConfig(); };
   }, [activeCategoryId]);
 
-  // 設定工作項目預設打開第一個分頁
   useEffect(() => {
     if (tasks.length > 0 && !activeTaskId) {
         setActiveTaskId(tasks[0].id);
@@ -226,7 +233,6 @@ export default function App() {
   
   const currentUserData = employees.find(e => e.name === currentUserName);
 
-  // 取得總完成數以計算總等級
   const getTotalProgress = (completedLearning: any) => {
     if (typeof completedLearning === 'number') return completedLearning;
     if (typeof completedLearning === 'object' && completedLearning !== null) {
@@ -277,13 +283,59 @@ export default function App() {
       });
       showToast('帳號密碼申請已送出！請等待總部核准。');
       setAuthMode('login'); setAuthPassword(''); setAuthError(''); 
-      setTimeout(() => window.scrollTo(0, 0), 50); // 確保畫面回到最頂
+      setTimeout(() => window.scrollTo(0, 0), 50); 
     } else {
       const matchedUser = employees.find(emp => emp.store === store && emp.password === password);
       if (matchedUser) {
-        setIsAuthenticated(true); setCurrentUserRole(matchedUser.role); setCurrentUserName(matchedUser.name);
-        setAuthPassword(''); setAuthError('');
-        setTimeout(() => window.scrollTo(0, 0), 50); // 確保登入後畫面比例回到正常頂部
+        const userStore = stores.find((s: any) => s.name === store);
+        if (userStore && userStore.lat && userStore.lng) {
+          setIsCheckingGPS(true);
+          showToast('正在驗證您的 GPS 定位，請稍候...');
+          
+          if (!navigator.geolocation) {
+            setIsCheckingGPS(false);
+            showToast('您的裝置不支援 GPS 定位，無法登入。');
+            setAuthError('裝置不支援 GPS');
+            return;
+          }
+
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              setIsCheckingGPS(false);
+              const dist = getDistanceFromLatLonInM(
+                position.coords.latitude, 
+                position.coords.longitude, 
+                userStore.lat, 
+                userStore.lng
+              );
+              
+              if (dist > 100) {
+                showToast(`登入失敗！您距離門店約 ${Math.round(dist)} 公尺 (不可超過 100m)。`);
+                setAuthError('不在門店範圍內，無法登入');
+              } else {
+                setIsAuthenticated(true); 
+                setCurrentUserRole(matchedUser.role); 
+                setCurrentUserName(matchedUser.name);
+                setAuthPassword(''); 
+                setAuthError('');
+                setTimeout(() => window.scrollTo(0, 0), 50); 
+              }
+            },
+            (error) => {
+              setIsCheckingGPS(false);
+              showToast('無法取得定位，請確認已開啟手機及瀏覽器的定位權限！');
+              setAuthError('請允許定位權限');
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          );
+        } else {
+          setIsAuthenticated(true); 
+          setCurrentUserRole(matchedUser.role); 
+          setCurrentUserName(matchedUser.name);
+          setAuthPassword(''); 
+          setAuthError('');
+          setTimeout(() => window.scrollTo(0, 0), 50);
+        }
       } else {
         const isPending = pendingAccounts.some(pa => pa.store === store && pa.password === password);
         if (isPending) {
@@ -347,7 +399,6 @@ export default function App() {
     } catch (error) { showToast('更新失敗，請檢查網路連線。'); }
   };
 
-  // --- 學習規則與分類管理 ---
   const addLevelRule = () => {
     setEditingLevelRules([...editingLevelRules, { id: Date.now().toString(), min: 0, max: 0, levelName: '' }]);
   };
@@ -382,7 +433,6 @@ export default function App() {
                            ? (currentUserData?.completedLearning[currentActiveCatId] || 0) 
                            : (currentActiveCatId === displayCategories[0].id ? currentUserData?.completedLearning || 0 : 0);
 
-  // --- 工作項目管理相關函式 ---
   const saveTaskRolesConfig = async () => {
     try {
       await setDoc(doc(db, 'config', 'global'), { taskRoles: editingTaskRoles }, { merge: true });
@@ -399,11 +449,9 @@ export default function App() {
       const taskIdsToKeep = validTasks.map(t => t.id);
       const tasksToDelete = tasks.filter(t => !taskIdsToKeep.includes(t.id));
       
-      // 刪除不要的
       for (const t of tasksToDelete) {
          await deleteDoc(doc(db, 'tasks', t.id));
       }
-      // 新增或更新
       for (const t of validTasks) {
          if (t.id.startsWith('temp_')) {
              await addDoc(collection(db, 'tasks'), { name: t.name, count: 0, createdAt: Date.now() });
@@ -418,7 +466,6 @@ export default function App() {
     }
   };
 
-  // 只加不減 (前台授權者)
   const incrementEmployeeTask = async (empId: string, taskId: string, taskName: string) => {
       const emp = employees.find(e => e.id === empId);
       if (!emp) return;
@@ -428,7 +475,7 @@ export default function App() {
 
       if (existingTaskIndex >= 0) {
           newDetails[existingTaskIndex].count += 1;
-          newDetails[existingTaskIndex].name = taskName; // 同步名稱
+          newDetails[existingTaskIndex].name = taskName; 
       } else {
           newDetails.push({ id: taskId, name: taskName, count: 1 });
       }
@@ -437,7 +484,6 @@ export default function App() {
       showToast('已增加 1 次！');
   };
 
-  // 自由修改 (後台專用)
   const editEmployeeTaskCount = async (empId: string, taskId: string, taskName: string, newCount: number) => {
       const emp = employees.find(e => e.id === empId);
       if (!emp) return;
@@ -455,7 +501,6 @@ export default function App() {
       await updateDoc(doc(db, 'employees', empId), { tasksDetail: newDetails });
   };
 
-  // === 畫面渲染 ===
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col justify-center items-center px-4 py-10 font-sans relative">
@@ -569,8 +614,8 @@ export default function App() {
               {authError && <p className="text-red-500 text-[10px] font-bold mt-1.5 ml-1 flex items-center animate-in slide-in-from-top-1"><XCircle c="w-3 h-3 mr-1" />{authError}</p>}
             </div>
 
-            <button type="submit" className="w-full bg-indigo-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all mt-2 tracking-widest">
-              {authMode === 'login' ? '進入系統' : '送出申請'}
+            <button type="submit" disabled={isCheckingGPS} className={`w-full bg-indigo-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-indigo-100 transition-all mt-2 tracking-widest ${isCheckingGPS ? 'opacity-70 cursor-not-allowed' : 'hover:bg-indigo-700'}`}>
+              {isCheckingGPS ? '定位驗證中...' : (authMode === 'login' ? '進入系統' : '送出申請')}
             </button>
           </form>
 
@@ -603,7 +648,7 @@ export default function App() {
                     if(secretPwd==='0204') { 
                       setIsAuthenticated(true); setCurrentUserRole('super_admin'); setCurrentUserName('總部管理員'); 
                       setShowSecretModal(false); setAuthMode('login'); setSecretPwd(''); 
-                      setTimeout(() => window.scrollTo(0, 0), 50); // 確保畫面捲回頂部
+                      setTimeout(() => window.scrollTo(0, 0), 50); 
                     } else { showToast('密碼錯誤！'); setSecretPwd(''); } 
                   }} className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold">登入</button>
                 </div>
@@ -621,6 +666,71 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50 flex justify-center font-sans relative">
       <style>{customStyles}</style>
+      
+      {/* 總部專屬 GPS 設定彈出視窗 */}
+      {showGpsModal && canEdit && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white p-6 rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-black text-xl text-gray-800 flex items-center"><MapPin c="w-6 h-6 mr-2 text-indigo-600" />各店 GPS 定位設定</h3>
+              <button onClick={() => setShowGpsModal(false)} className="text-gray-400 hover:text-gray-600"><XCircle c="w-6 h-6" /></button>
+            </div>
+            <p className="text-xs text-gray-500 mb-4 font-bold leading-relaxed">設定後，該門店員工登入時須距離此座標 100 公尺內。未設定座標的門店將不受限制。</p>
+
+            <div className="overflow-y-auto flex-1 space-y-4 pr-2 hide-scrollbar">
+              {stores.map(store => (
+                <div key={store.id} className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="font-bold text-indigo-900 text-sm">{store.name}</h4>
+                    <button
+                      onClick={() => {
+                        if (!navigator.geolocation) {
+                          showToast('您的裝置不支援定位功能'); return;
+                        }
+                        showToast('定位中...');
+                        navigator.geolocation.getCurrentPosition(
+                          (pos) => {
+                            updateDoc(doc(db, 'stores', store.id), { lat: pos.coords.latitude, lng: pos.coords.longitude });
+                            showToast(`${store.name} 座標已更新！`);
+                          },
+                          (err) => showToast('無法取得定位，請確認權限是否開啟'),
+                          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                        );
+                      }}
+                      className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-1 rounded font-bold hover:bg-indigo-200 transition-colors"
+                    >
+                      抓取目前位置
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-gray-500 font-bold block mb-1">緯度 (Latitude)</label>
+                      <input type="number" step="any" value={store.lat || ''} onChange={e => updateDoc(doc(db, 'stores', store.id), { lat: parseFloat(e.target.value) || null })} className="w-full p-2 border border-gray-200 rounded text-xs outline-none focus:border-indigo-500" placeholder="未設定" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500 font-bold block mb-1">經度 (Longitude)</label>
+                      <input type="number" step="any" value={store.lng || ''} onChange={e => updateDoc(doc(db, 'stores', store.id), { lng: parseFloat(e.target.value) || null })} className="w-full p-2 border border-gray-200 rounded text-xs outline-none focus:border-indigo-500" placeholder="未設定" />
+                    </div>
+                  </div>
+                  {(store.lat && store.lng) && (
+                     <div className="mt-2 text-[10px] text-green-600 font-bold flex items-center">
+                       <CheckCircle2 c="w-3 h-3 mr-1" /> 已啟用距離防護 (100m內)
+                     </div>
+                  )}
+                </div>
+              ))}
+              {stores.length === 0 && <p className="text-center text-gray-400 text-xs py-4 font-bold">目前無門店資料，請先新增門店</p>}
+            </div>
+
+            <div className="pt-4 mt-4 border-t border-gray-100">
+              <button onClick={() => setShowGpsModal(false)} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-md shadow-indigo-200 active:scale-95 transition-transform">
+                完成設定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="w-full max-w-md bg-slate-50 relative min-h-screen shadow-xl flex flex-col overflow-hidden sm:border-x border-gray-200">
         
         <header className="bg-white p-4 border-b border-gray-200 flex justify-between items-center sticky top-0 z-20">
@@ -628,14 +738,19 @@ export default function App() {
             <div className="bg-indigo-600 p-1.5 rounded-lg text-white"><Store c="w-4 h-4" /></div>
             <h1 className="font-black text-gray-800 tracking-wide text-lg">{canEdit ? '總部學習系統' : '門店學習系統'}</h1>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {canEdit && (
+              <button onClick={() => setShowGpsModal(true)} className="bg-gray-100 p-1.5 rounded-lg text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors" title="GPS 定位設定">
+                <Settings c="w-5 h-5" />
+              </button>
+            )}
             {pendingAccounts.length > 0 && canEdit && (
-              <button onClick={() => setActiveTab('pending')} className="relative bg-gray-100 p-1.5 rounded-lg hover:bg-blue-50 transition-colors group cursor-pointer">
+              <button onClick={() => setActiveTab('pending')} className="relative bg-gray-100 p-1.5 rounded-lg hover:bg-blue-50 transition-colors group cursor-pointer" title="待審核通知">
                 <Bell c="w-5 h-5 text-gray-500 group-hover:text-blue-500 animate-pulse" />
                 <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
               </button>
             )}
-            <button onClick={() => { setIsAuthenticated(false); setAuthPassword(''); }} className="bg-gray-100 p-1.5 rounded-lg text-gray-400 hover:text-red-500 transition-colors"><LogOut c="w-4 h-4" /></button>
+            <button onClick={() => { setIsAuthenticated(false); setAuthPassword(''); }} className="bg-gray-100 p-1.5 rounded-lg text-gray-400 hover:text-red-500 transition-colors" title="登出"><LogOut c="w-4 h-4" /></button>
           </div>
         </header>
 
@@ -1280,7 +1395,8 @@ export default function App() {
                                   </div>
                                   <div>
                                     <h3 className="font-black text-gray-800 text-xl sm:text-2xl tracking-wide mb-1">{emp.name}</h3>
-                                    <span className="text-xs text-gray-500 font-bold px-2 py-1 bg-gray-100 rounded-md mt-1 inline-block">{emp.store}</span>
+                                    <RoleBadge role={emp.role} />
+                                    <span className="text-xs text-gray-500 font-bold ml-2">{emp.store}</span>
                                   </div>
                                 </div>
                                 
