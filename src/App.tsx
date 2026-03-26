@@ -41,6 +41,7 @@ const Camera = ({ c }: any) => <I c={c}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v
 const FolderPlus = ({ c }: any) => <I c={c}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" x2="12" y1="11" y2="17"/><line x1="9" x2="15" y1="14" y2="14"/></I>;
 
 const customStyles = `
+  /* 小標籤顏色 */
   .badge-solid-rainbow { background: linear-gradient(90deg, #ef4444, #eab308, #3b82f6, #a855f7, #ef4444); color: white; }
   .badge-solid-gold { background-color: #eab308; color: white; }
   .badge-solid-silver { background-color: #94a3b8; color: white; }
@@ -49,8 +50,15 @@ const customStyles = `
   .badge-solid-green { background-color: #22c55e; color: white; }
   .badge-solid-gray { background-color: #f3f4f6; color: #4b5563; }
   
-  @keyframes border-glow-rainbow { 0%, 100% { box-shadow: 0 0 8px #ef4444; border-color: #ef4444; } 33% { box-shadow: 0 0 14px #eab308; border-color: #eab308; } 66% { box-shadow: 0 0 14px #3b82f6; border-color: #3b82f6; } }
-  
+  /* 等級大卡片顏色與發光 */
+  .bg-role-manager { background: linear-gradient(90deg, #ef4444, #eab308, #22c55e, #3b82f6, #a855f7, #ef4444); background-size: 200% auto; animation: gradient-move 3s linear infinite; }
+  .bg-role-deputy { background: linear-gradient(135deg, #fbbf24, #f59e0b, #b45309); }
+  .bg-role-leader { background: linear-gradient(135deg, #cbd5e1, #94a3b8, #64748b); }
+  .bg-role-reserve { background: linear-gradient(135deg, #d97706, #b45309, #78350f); }
+  .bg-role-staff { background: linear-gradient(135deg, #4b5563, #1f2937, #030712); }
+  .bg-role-intern { background: linear-gradient(135deg, #4ade80, #22c55e, #15803d); }
+  .bg-role-default { background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899); }
+
   @keyframes pulse-glow {
     0% { box-shadow: 0 0 10px rgba(99, 102, 241, 0.4); }
     100% { box-shadow: 0 0 25px rgba(236, 72, 153, 0.7); }
@@ -58,6 +66,31 @@ const customStyles = `
   .level-card-glow {
     box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
     animation: pulse-glow 2.5s infinite alternate;
+  }
+
+  /* 表面閃閃發光特效 */
+  @keyframes shine {
+    0% { left: -100%; opacity: 0; }
+    10% { opacity: 1; }
+    20% { left: 200%; opacity: 0; }
+    100% { left: 200%; opacity: 0; }
+  }
+  .animate-shine::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.4) 50%, rgba(255,255,255,0) 100%);
+    transform: skewX(-20deg);
+    animation: shine 4s infinite;
+    z-index: 1;
+    pointer-events: none;
+  }
+  @keyframes gradient-move {
+    0% { background-position: 0% center; }
+    100% { background-position: -200% center; }
   }
 
   /* 風琴夾樣式與滾動條隱藏 */
@@ -76,6 +109,18 @@ const RoleBadge = ({ role }: any) => {
   else if (role === '正職' || role === '兼職') badgeClass = "badge-solid-black";
   else if (role?.includes('實習')) { badgeClass = "badge-solid-green"; icon = <SproutLeaf c="w-3.5 h-3.5 mr-1 fill-current" />; }
   return <span className={`px-2.5 py-1 rounded text-[10px] font-bold inline-flex items-center tracking-wider shadow-sm ${badgeClass}`}>{icon}{role}</span>;
+};
+
+// 依據職位決定等級大卡片的顏色與特效
+const getRoleCardStyle = (role: any) => {
+  let baseStyle = "level-card-glow animate-shine relative overflow-hidden rounded-xl p-5 text-white mb-5 ";
+  if (role === '店長') return baseStyle + "bg-role-manager";
+  if (role === '副店長') return baseStyle + "bg-role-deputy";
+  if (role === '組長') return baseStyle + "bg-role-leader";
+  if (role === '儲備') return baseStyle + "bg-role-reserve";
+  if (role === '正職' || role === '兼職') return baseStyle + "bg-role-staff";
+  if (role?.includes('實習')) return baseStyle + "bg-role-intern";
+  return baseStyle + "bg-role-default";
 };
 
 const getCardGlowClass = (role: any) => {
@@ -107,22 +152,41 @@ export default function App() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [pendingAccounts, setPendingAccounts] = useState<any[]>([]);
   const [progressApprovals, setProgressApprovals] = useState<any[]>([]);
-  const [learningLevelUpThreshold, setLearningLevelUpThreshold] = useState<number>(3);
-  const [taskRoles, setTaskRoles] = useState<any[]>([]); 
   
-  // 等級與分類狀態
+  // 學習設定相關狀態
+  const [learningLevelUpThreshold, setLearningLevelUpThreshold] = useState<number>(3);
   const [levelRules, setLevelRules] = useState<any[]>([]); 
   const [editingLevelRules, setEditingLevelRules] = useState<any[]>([]); 
-  
   const [categories, setCategories] = useState<any[]>([{id: 'default', name: '綜合學習'}]);
   const [activeCategoryId, setActiveCategoryId] = useState<string>('');
   const [showCategoryManager, setShowCategoryManager] = useState<boolean>(false);
   const [editingCategories, setEditingCategories] = useState<any[]>([]);
 
+  // 工作項目相關狀態
+  const [taskRoles, setTaskRoles] = useState<any[]>([]); 
+  const [editingTaskRoles, setEditingTaskRoles] = useState<any[]>([]); // 防誤刪儲存用的局部狀態
+  const [activeTaskId, setActiveTaskId] = useState<string>('');
+  const [showTaskManager, setShowTaskManager] = useState<boolean>(false);
+  const [editingTasks, setEditingTasks] = useState<any[]>([]);
+
+  // 解決手機版 (iOS Safari) 輸入框點擊後自動放大且不縮回的問題
+  useEffect(() => {
+    let viewportMeta = document.querySelector('meta[name="viewport"]');
+    if (!viewportMeta) {
+      viewportMeta = document.createElement('meta');
+      viewportMeta.setAttribute('name', 'viewport');
+      document.head.appendChild(viewportMeta);
+    }
+    viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+  }, []);
+
   useEffect(() => {
     const unsubStores = onSnapshot(collection(db, 'stores'), (snap: any) => setStores(snap.docs.map((d: any) => ({id: d.id, ...d.data()}))));
     const unsubSteps = onSnapshot(collection(db, 'learningSteps'), (snap: any) => setLearningSteps(snap.docs.map((d: any) => ({id: d.id, ...d.data()})).sort((a: any,b: any)=>a.createdAt-b.createdAt)));
-    const unsubTasks = onSnapshot(collection(db, 'tasks'), (snap: any) => setTasks(snap.docs.map((d: any) => ({id: d.id, ...d.data()})).sort((a: any,b: any)=>a.createdAt-b.createdAt)));
+    const unsubTasks = onSnapshot(collection(db, 'tasks'), (snap: any) => {
+        const fetchedTasks = snap.docs.map((d: any) => ({id: d.id, ...d.data()})).sort((a: any,b: any)=>a.createdAt-b.createdAt);
+        setTasks(fetchedTasks);
+    });
     const unsubEmp = onSnapshot(collection(db, 'employees'), (snap: any) => setEmployees(snap.docs.map((d: any) => ({id: d.id, ...d.data()}))));
     const unsubPending = onSnapshot(collection(db, 'pendingAccounts'), (snap: any) => setPendingAccounts(snap.docs.map((d: any) => ({id: d.id, ...d.data()}))));
     const unsubProg = onSnapshot(collection(db, 'progressApprovals'), (snap: any) => setProgressApprovals(snap.docs.map((d: any) => ({id: d.id, ...d.data()}))));
@@ -130,11 +194,15 @@ export default function App() {
       if(d.exists()) {
         const data = d.data();
         setLearningLevelUpThreshold(data.learningLevelUpThreshold || 3); 
+        
+        // 任務權限同步
         setTaskRoles(data.taskRoles || []); 
+        setEditingTaskRoles(prev => prev.length === 0 && data.taskRoles?.length > 0 ? data.taskRoles : prev);
+
         setLevelRules(data.levelRules || []);
         setEditingLevelRules(prev => prev.length === 0 && data.levelRules?.length > 0 ? data.levelRules : prev);
         
-        // 讀取分類
+        // 讀取學習分類
         if (data.learningCategories && data.learningCategories.length > 0) {
           setCategories(data.learningCategories);
           if (!activeCategoryId) setActiveCategoryId(data.learningCategories[0].id);
@@ -144,6 +212,13 @@ export default function App() {
 
     return () => { unsubStores(); unsubSteps(); unsubTasks(); unsubEmp(); unsubPending(); unsubProg(); unsubConfig(); };
   }, [activeCategoryId]);
+
+  // 設定工作項目預設打開第一個分頁
+  useEffect(() => {
+    if (tasks.length > 0 && !activeTaskId) {
+        setActiveTaskId(tasks[0].id);
+    }
+  }, [tasks, activeTaskId]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
   const canEdit = currentUserRole === 'super_admin';
@@ -202,11 +277,13 @@ export default function App() {
       });
       showToast('帳號密碼申請已送出！請等待總部核准。');
       setAuthMode('login'); setAuthPassword(''); setAuthError(''); 
+      setTimeout(() => window.scrollTo(0, 0), 50); // 確保畫面回到最頂
     } else {
       const matchedUser = employees.find(emp => emp.store === store && emp.password === password);
       if (matchedUser) {
         setIsAuthenticated(true); setCurrentUserRole(matchedUser.role); setCurrentUserName(matchedUser.name);
         setAuthPassword(''); setAuthError('');
+        setTimeout(() => window.scrollTo(0, 0), 50); // 確保登入後畫面比例回到正常頂部
       } else {
         const isPending = pendingAccounts.some(pa => pa.store === store && pa.password === password);
         if (isPending) {
@@ -246,17 +323,6 @@ export default function App() {
     } catch (err) { showToast("上傳失敗，請檢查網路！"); } finally { e.target.value = null; }
   };
 
-  const toggleTaskRole = async (role: string) => {
-    let newRoles = [...taskRoles];
-    if (newRoles.includes(role)) {
-      newRoles = newRoles.filter((r: any) => r !== role);
-    } else {
-      newRoles.push(role);
-    }
-    await setDoc(doc(db, 'config', 'global'), { taskRoles: newRoles }, { merge: true });
-    showToast(`統計權限已更新！`);
-  };
-
   const startEditEmployee = (emp: any) => {
     setEditingEmployeeId(emp.id);
     setEditEmployeeData({ 
@@ -281,7 +347,7 @@ export default function App() {
     } catch (error) { showToast('更新失敗，請檢查網路連線。'); }
   };
 
-  // 等級規則管理
+  // --- 學習規則與分類管理 ---
   const addLevelRule = () => {
     setEditingLevelRules([...editingLevelRules, { id: Date.now().toString(), min: 0, max: 0, levelName: '' }]);
   };
@@ -296,7 +362,6 @@ export default function App() {
     try { await setDoc(doc(db, 'config', 'global'), { levelRules: parsedRules }, { merge: true }); setLevelRules(parsedRules); showToast('學習升級門檻已儲存！'); } catch (e) { showToast('儲存失敗！'); }
   };
 
-  // 分類管理
   const saveCategoriesConfig = async () => {
     const validCategories = editingCategories.filter((c: any) => c.name.trim() !== '');
     try {
@@ -312,13 +377,85 @@ export default function App() {
 
   const displayCategories = categories.length > 0 ? categories : [{id: 'default', name: '綜合學習'}];
   const currentActiveCatId = activeCategoryId || displayCategories[0].id;
-  
   const filteredSteps = learningSteps.filter(s => s.categoryId === currentActiveCatId || (!s.categoryId && currentActiveCatId === displayCategories[0].id));
-  
   const categoryProgress = typeof currentUserData?.completedLearning === 'object' 
                            ? (currentUserData?.completedLearning[currentActiveCatId] || 0) 
                            : (currentActiveCatId === displayCategories[0].id ? currentUserData?.completedLearning || 0 : 0);
 
+  // --- 工作項目管理相關函式 ---
+  const saveTaskRolesConfig = async () => {
+    try {
+      await setDoc(doc(db, 'config', 'global'), { taskRoles: editingTaskRoles }, { merge: true });
+      setTaskRoles(editingTaskRoles);
+      showToast('工作項目統計權限已儲存！');
+    } catch (e) {
+      showToast('儲存權限失敗！');
+    }
+  };
+
+  const saveTasksConfig = async () => {
+    try {
+      const validTasks = editingTasks.filter((t: any) => t.name.trim() !== '');
+      const taskIdsToKeep = validTasks.map(t => t.id);
+      const tasksToDelete = tasks.filter(t => !taskIdsToKeep.includes(t.id));
+      
+      // 刪除不要的
+      for (const t of tasksToDelete) {
+         await deleteDoc(doc(db, 'tasks', t.id));
+      }
+      // 新增或更新
+      for (const t of validTasks) {
+         if (t.id.startsWith('temp_')) {
+             await addDoc(collection(db, 'tasks'), { name: t.name, count: 0, createdAt: Date.now() });
+         } else {
+             await updateDoc(doc(db, 'tasks', t.id), { name: t.name });
+         }
+      }
+      setShowTaskManager(false);
+      showToast('工作項目已成功儲存！');
+    } catch(e) {
+      showToast('工作項目儲存失敗！');
+    }
+  };
+
+  // 只加不減 (前台授權者)
+  const incrementEmployeeTask = async (empId: string, taskId: string, taskName: string) => {
+      const emp = employees.find(e => e.id === empId);
+      if (!emp) return;
+      const currentDetails = emp.tasksDetail || [];
+      const existingTaskIndex = currentDetails.findIndex((t: any) => t.id === taskId);
+      let newDetails = [...currentDetails];
+
+      if (existingTaskIndex >= 0) {
+          newDetails[existingTaskIndex].count += 1;
+          newDetails[existingTaskIndex].name = taskName; // 同步名稱
+      } else {
+          newDetails.push({ id: taskId, name: taskName, count: 1 });
+      }
+
+      await updateDoc(doc(db, 'employees', empId), { tasksDetail: newDetails });
+      showToast('已增加 1 次！');
+  };
+
+  // 自由修改 (後台專用)
+  const editEmployeeTaskCount = async (empId: string, taskId: string, taskName: string, newCount: number) => {
+      const emp = employees.find(e => e.id === empId);
+      if (!emp) return;
+      const currentDetails = emp.tasksDetail || [];
+      const existingTaskIndex = currentDetails.findIndex((t: any) => t.id === taskId);
+      let newDetails = [...currentDetails];
+
+      if (existingTaskIndex >= 0) {
+          newDetails[existingTaskIndex].count = newCount;
+          newDetails[existingTaskIndex].name = taskName;
+      } else {
+          newDetails.push({ id: taskId, name: taskName, count: newCount });
+      }
+
+      await updateDoc(doc(db, 'employees', empId), { tasksDetail: newDetails });
+  };
+
+  // === 畫面渲染 ===
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col justify-center items-center px-4 py-10 font-sans relative">
@@ -466,6 +603,7 @@ export default function App() {
                     if(secretPwd==='0204') { 
                       setIsAuthenticated(true); setCurrentUserRole('super_admin'); setCurrentUserName('總部管理員'); 
                       setShowSecretModal(false); setAuthMode('login'); setSecretPwd(''); 
+                      setTimeout(() => window.scrollTo(0, 0), 50); // 確保畫面捲回頂部
                     } else { showToast('密碼錯誤！'); setSecretPwd(''); } 
                   }} className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold">登入</button>
                 </div>
@@ -503,6 +641,7 @@ export default function App() {
 
         <main className="flex-1 overflow-y-auto p-4 pb-24">
           
+          {/* TAB 1.5: 待審核名單 (僅後台可見) */}
           {activeTab === 'pending' && canEdit && (
             <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
               <div className="flex items-center gap-3 mb-2">
@@ -546,6 +685,7 @@ export default function App() {
             </div>
           )}
 
+          {/* TAB 1: 學習地圖 */}
           {activeTab === 'learning' && (
             <div className="space-y-6 animate-in fade-in duration-300">
               
@@ -854,26 +994,42 @@ export default function App() {
 
           {/* TAB 2: 工作項目管理 */}
           {activeTab === 'tasks' && (
-            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
-              <div className="flex justify-between items-center mb-6">
-                <div><h2 className="font-bold text-gray-800 text-lg">工作項目管理</h2></div>
+            <div className="space-y-6 animate-in fade-in duration-300">
+              
+              <div className="flex justify-between items-center mb-2 px-1">
+                <div>
+                   <h2 className="font-bold text-gray-800 text-lg">工作項目管理</h2>
+                   {!canEdit && <p className="text-[10px] text-gray-500 font-bold mt-0.5">※ 點擊下方標籤查看並登錄人員次數</p>}
+                </div>
+                {canEdit && (
+                  <button onClick={() => { setEditingTasks([...tasks]); setShowTaskManager(true); }} className="flex items-center bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm">
+                    <Settings c="w-3.5 h-3.5 mr-1" /><span>管理工作項目</span>
+                  </button>
+                )}
               </div>
 
-              {/* 總部專屬：工作項目統計權限設定 */}
+              {/* 總部專屬：權限設定區塊 */}
               {canEdit && (
-                <div className="mb-6 bg-slate-900 text-white rounded-xl p-4 shadow-lg">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <Settings c="w-4 h-4 text-blue-400" />
-                    <h3 className="text-sm font-bold tracking-wider">工作項目統計權限</h3>
+                <div className="mb-4 bg-slate-900 text-white rounded-xl p-4 shadow-lg">
+                  <div className="flex items-center justify-between mb-3 border-b border-slate-700 pb-3">
+                    <div className="flex items-center space-x-2">
+                      <Settings c="w-4 h-4 text-blue-400" />
+                      <h3 className="text-sm font-bold tracking-wider">工作項目統計權限</h3>
+                    </div>
+                    <button onClick={saveTaskRolesConfig} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow transition-colors active:scale-95">
+                      儲存設定
+                    </button>
                   </div>
-                  <p className="text-[10px] text-gray-400 mb-3 font-medium">請勾選哪些職位可以在系統中統計工作項目次數：</p>
+                  <p className="text-[10px] text-gray-400 mb-3 font-medium">請勾選哪些職位可以在系統中為人員「增加」工作項目次數：</p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {jobRoles.map(role => (
                       <label key={role} className="flex items-center space-x-2 bg-white/10 p-2 rounded-lg cursor-pointer hover:bg-white/20 transition-colors">
                         <input 
                           type="checkbox" 
-                          checked={taskRoles.includes(role)} 
-                          onChange={() => toggleTaskRole(role)}
+                          checked={editingTaskRoles.includes(role)} 
+                          onChange={() => {
+                              setEditingTaskRoles(prev => prev.includes(role) ? prev.filter((r: any) => r !== role) : [...prev, role]);
+                          }}
                           className="w-3.5 h-3.5 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
                         />
                         <span className="text-[11px] font-bold">{role}</span>
@@ -883,23 +1039,107 @@ export default function App() {
                 </div>
               )}
 
-              <table className="w-full text-left text-sm border-collapse">
-                <thead>
-                  <tr className="bg-gray-100 border-b border-gray-200 text-gray-600 text-xs">
-                    <th className="p-3 font-bold">項目名稱</th><th className="p-3 font-bold w-20 text-center">總次數</th>{canEdit && <th className="p-3 font-bold text-right w-12">刪除</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {tasks.map(task => (
-                    <tr key={task.id} className="border-b border-gray-100">
-                      <td className="p-2"><input type="text" defaultValue={task.name} disabled={!canEdit} onBlur={e => updateDoc(doc(db, 'tasks', task.id), { name: e.target.value })} className="w-full p-2 border border-gray-200 rounded text-sm font-medium focus:border-indigo-500 outline-none bg-white disabled:bg-transparent disabled:border-transparent"/></td>
-                      <td className="p-2"><input type="number" defaultValue={task.count} disabled={!canEditTaskCount} onBlur={e => updateDoc(doc(db, 'tasks', task.id), { count: parseInt(e.target.value)||0 })} className="w-full p-2 border border-gray-200 rounded text-sm font-bold text-indigo-600 focus:border-indigo-500 outline-none bg-white disabled:bg-transparent disabled:border-transparent text-center"/></td>
-                      {canEdit && <td className="p-2 text-right"><button onClick={async () => await deleteDoc(doc(db, 'tasks', task.id))} className="text-red-400 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash2 c="w-4 h-4" /></button></td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {canEdit && <button onClick={async () => await addDoc(collection(db, 'tasks'), { name: '新項目', count: 0, createdAt: Date.now() })} className="mt-4 flex items-center space-x-1 text-indigo-600 hover:text-indigo-800 font-bold p-2 text-xs bg-indigo-50 rounded-lg transition-colors"><PlusCircle c="w-4 h-4" /><span>新增工作項目</span></button>}
+              {/* 後台專屬：任務管理模式 */}
+              {canEdit && showTaskManager && (
+                 <div className="mb-4 bg-slate-800 rounded-xl p-4 shadow-lg text-white animate-in slide-in-from-top-2">
+                     <h3 className="font-bold mb-3 flex items-center text-sm"><FolderPlus c="w-4 h-4 mr-2 text-indigo-400"/>編輯工作項目標籤</h3>
+                     <p className="text-[10px] text-gray-400 mb-3">新增、編輯或刪除工作項目（如洗碗、收桌等）：</p>
+                     <div className="space-y-2 mb-4">
+                       {editingTasks.map((t: any) => (
+                         <div key={t.id} className="flex gap-2 items-center">
+                           <input type="text" value={t.name} onChange={e => setEditingTasks(editingTasks.map((tt: any) => tt.id === t.id ? {...tt, name: e.target.value} : tt))} className="flex-1 p-2 rounded bg-slate-700 border border-slate-600 text-sm font-bold outline-none focus:border-indigo-400" placeholder="工作名稱" />
+                           <button onClick={() => setEditingTasks(editingTasks.filter((tt: any) => tt.id !== t.id))} className="p-2 bg-red-500/20 text-red-400 rounded hover:bg-red-500/40 transition-colors"><Trash2 c="w-4 h-4"/></button>
+                         </div>
+                       ))}
+                       <button onClick={() => setEditingTasks([...editingTasks, {id: 'temp_' + Date.now().toString(), name: ''}])} className="w-full p-2 mt-1 border border-dashed border-slate-600 rounded text-slate-400 font-bold hover:text-white hover:border-slate-400 text-xs transition-colors"> + 新增工作標籤</button>
+                     </div>
+                     <div className="flex gap-2 pt-2 border-t border-slate-700">
+                       <button onClick={() => setShowTaskManager(false)} className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 rounded text-xs font-bold transition-colors">取消</button>
+                       <button onClick={saveTasksConfig} className="flex-1 py-2 bg-indigo-500 hover:bg-indigo-400 rounded text-xs font-bold shadow-md shadow-indigo-500/30 transition-colors">儲存工作項目</button>
+                     </div>
+                 </div>
+              )}
+
+              {/* 任務風琴夾列表 與 人員統計清單 */}
+              {!showTaskManager && (
+                  <div className="bg-transparent">
+                      {/* 任務標籤 */}
+                      {tasks.length > 0 && (
+                          <div className="flex overflow-x-auto pl-2 pt-2 -mb-[1px] hide-scrollbar z-10 relative">
+                              {tasks.map((task: any, i: number) => {
+                                  const isActive = activeTaskId === task.id;
+                                  return (
+                                      <div
+                                          key={task.id}
+                                          onClick={() => setActiveTaskId(task.id)}
+                                          className={`relative cursor-pointer px-4 sm:px-6 py-2.5 min-w-[80px] max-w-[120px] text-center rounded-t-xl -ml-2 border border-gray-200 transition-all select-none flex-shrink-0 ${
+                                              isActive
+                                                  ? 'bg-white text-indigo-600 font-black border-b-white z-20 pt-3.5 -mt-1.5 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]'
+                                                  : 'bg-indigo-50/90 text-gray-500 font-bold hover:bg-indigo-100/90 shadow-inner inset-shadow'
+                                          }`}
+                                          style={{ zIndex: isActive ? 20 : tasks.length - i }}
+                                      >
+                                          <span className="truncate block text-[13px]">{task.name}</span>
+                                      </div>
+                                  )
+                              })}
+                          </div>
+                      )}
+
+                      {/* 選定任務的統計內容 */}
+                      <div className="bg-white border border-gray-200 rounded-xl rounded-tl-none shadow-sm relative z-10 p-4 min-h-[200px]">
+                          {tasks.length === 0 ? (
+                              <div className="p-10 text-center text-gray-400 text-sm font-bold">
+                                  <ListTodo c="w-10 h-10 mx-auto mb-3 text-gray-200" />
+                                  尚無工作項目，請總部新增
+                              </div>
+                          ) : (
+                              <div className="space-y-3">
+                                  {employees.map(emp => {
+                                      const activeTask = tasks.find(t => t.id === activeTaskId);
+                                      const taskRecord = emp.tasksDetail?.find((t: any) => t.id === activeTaskId);
+                                      const count = taskRecord ? taskRecord.count : 0;
+
+                                      return (
+                                          <div key={emp.id} className="flex justify-between items-center p-3 border border-gray-100 rounded-xl bg-gray-50">
+                                              <div className="flex items-center gap-3">
+                                                  <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm overflow-hidden border border-gray-200">
+                                                      {emp.avatarUrl ? <img src={emp.avatarUrl} className="w-full h-full object-cover"/> : <User c="w-5 h-5 text-gray-400" />}
+                                                  </div>
+                                                  <div>
+                                                      <h4 className="font-bold text-gray-800 text-sm">{emp.name}</h4>
+                                                      <RoleBadge role={emp.role} />
+                                                  </div>
+                                              </div>
+                                              <div className="flex items-center gap-3">
+                                                  <div className="text-right mr-1">
+                                                      <span className="text-[10px] text-gray-500 block font-bold">完成次數</span>
+                                                      <span className="font-black text-lg text-indigo-600">{count}</span>
+                                                  </div>
+                                                  {/* 總部管理員 (加減修改) */}
+                                                  {canEdit ? (
+                                                      <div className="flex items-center gap-1 bg-white border border-gray-200 p-1 rounded-lg shadow-sm">
+                                                          <button onClick={() => editEmployeeTaskCount(emp.id, activeTaskId, activeTask?.name, Math.max(0, count - 1))} className="w-6 h-6 rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center justify-center font-black transition-colors active:scale-95">-</button>
+                                                          <input type="number" value={count} onChange={(e) => editEmployeeTaskCount(emp.id, activeTaskId, activeTask?.name, parseInt(e.target.value)||0)} className="w-10 text-center text-sm font-bold bg-transparent outline-none text-indigo-600" />
+                                                          <button onClick={() => editEmployeeTaskCount(emp.id, activeTaskId, activeTask?.name, count + 1)} className="w-6 h-6 rounded-md bg-indigo-100 text-indigo-600 hover:bg-indigo-200 flex items-center justify-center font-black transition-colors active:scale-95">+</button>
+                                                      </div>
+                                                  ) : (
+                                                    /* 授權職位 (只加不減的 +1 按鈕) */
+                                                    canEditTaskCount && (
+                                                        <button onClick={() => incrementEmployeeTask(emp.id, activeTaskId, activeTask?.name)} className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 hover:bg-indigo-200 border border-indigo-200 flex items-center justify-center font-black transition-all active:scale-90 shadow-sm text-xl shadow-indigo-100">
+                                                            +
+                                                        </button>
+                                                    )
+                                                  )}
+                                              </div>
+                                          </div>
+                                      );
+                                  })}
+                              </div>
+                          )}
+                      </div>
+                  </div>
+              )}
             </div>
           )}
           
@@ -1040,8 +1280,7 @@ export default function App() {
                                   </div>
                                   <div>
                                     <h3 className="font-black text-gray-800 text-xl sm:text-2xl tracking-wide mb-1">{emp.name}</h3>
-                                    <RoleBadge role={emp.role} />
-                                    <span className="text-xs text-gray-500 font-bold ml-2">{emp.store}</span>
+                                    <span className="text-xs text-gray-500 font-bold px-2 py-1 bg-gray-100 rounded-md mt-1 inline-block">{emp.store}</span>
                                   </div>
                                 </div>
                                 
@@ -1055,15 +1294,15 @@ export default function App() {
                               </div>
 
                               {/* 發光實色等級卡片 */}
-                              <div className="level-card-glow bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-xl p-5 text-white relative overflow-hidden mb-5">
-                                <div className="absolute inset-0 bg-white/10 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4yKSIvPjwvc3ZnPg==')]"></div>
+                              <div className={getRoleCardStyle(emp.role)}>
+                                <div className="absolute inset-0 bg-white/10 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4yKSIvPjwvc3ZnPg==')] z-0 pointer-events-none"></div>
                                 <div className="flex justify-between items-end relative z-10">
                                    <div>
-                                     <p className="text-[11px] font-bold text-indigo-100 mb-1 tracking-widest">目前等級</p>
+                                     <p className="text-[11px] font-bold text-white/80 mb-1 tracking-widest">目前等級</p>
                                      <p className="text-3xl font-black drop-shadow-md">{getLevelDisplay(emp.completedLearning || 0)}</p>
                                    </div>
                                    <div className="text-right">
-                                     <p className="text-[11px] font-bold text-indigo-100 mb-1 tracking-widest">所屬職位</p>
+                                     <p className="text-[11px] font-bold text-white/80 mb-1 tracking-widest">所屬職位</p>
                                      <p className="text-xl font-bold drop-shadow-md">{emp.role}</p>
                                    </div>
                                 </div>
