@@ -122,7 +122,7 @@ const RoleBadge = ({ role }: any) => {
   else if (role === '儲備') badgeClass = "badge-solid-bronze";
   else if (role === '正職' || role === '兼職') badgeClass = "badge-solid-black";
   else if (role?.includes('實習')) { badgeClass = "badge-solid-green"; icon = <SproutLeaf c="w-3.5 h-3.5 mr-1 fill-current" />; }
-  return <span className={`px-2.5 py-1 rounded text-[10px] font-bold inline-flex items-center tracking-wider shadow-sm ${badgeClass}`}>{icon}{role}</span>;
+  return <span className={`px-2.5 py-1 rounded text-[10px] font-bold inline-flex items-center tracking-wider shadow-sm ${badgeClass}`}>{icon}{role ? String(role) : ''}</span>;
 };
 
 // 依據職位決定等級大卡片的顏色與特效
@@ -253,21 +253,21 @@ export default function App() {
     }
   }, [tasks, activeTaskId]);
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
-  const canEdit = currentUserRole === 'super_admin';
-  const canEditTaskCount = canEdit || taskRoles.includes(currentUserRole); 
-  
-  const currentUserData = employees.find(e => e.name === currentUserName);
+  // 改用常規 function 宣告，避免 TDZ (暫時性死區) 問題
+  function showToast(msg: string) { 
+    setToast(msg); 
+    setTimeout(() => setToast(null), 3000); 
+  }
 
-  const getTotalProgress = (completedLearning: any) => {
+  function getTotalProgress(completedLearning: any) {
     if (typeof completedLearning === 'number') return completedLearning;
     if (typeof completedLearning === 'object' && completedLearning !== null) {
-        return Object.values(completedLearning).reduce((a: any, b: any) => a + b, 0);
+        return Object.values(completedLearning).reduce((a: any, b: any) => Number(a) + Number(b), 0);
     }
     return 0;
-  };
+  }
 
-  const getLevelDisplay = (completedCount: any) => {
+  function getLevelDisplay(completedCount: any) {
     const totalCount = getTotalProgress(completedCount);
     if (!levelRules || levelRules.length === 0) {
       return `Lv. ${Math.floor(totalCount / learningLevelUpThreshold)}`;
@@ -280,9 +280,20 @@ export default function App() {
     if (highestRule && totalCount > parseInt(highestRule.max)) return `Lv. ${highestRule.levelName} (Max)`;
     
     return 'Lv. 0';
-  };
+  }
 
-  const handleAuthSubmit = async (e: any) => {
+  function getStepBlocks(step: any) {
+    if (step.blocks && Array.isArray(step.blocks)) return step.blocks;
+    return [{
+      id: 'default_' + step.id,
+      subtitle: step.subtitle || '',
+      description: step.description || '',
+      mediaUrl: step.mediaUrl || '',
+      fileName: step.fileName || ''
+    }];
+  }
+
+  async function handleAuthSubmit(e: any) {
     e.preventDefault();
     const target = e.target as any;
     const password = authPassword;
@@ -309,7 +320,6 @@ export default function App() {
       });
       showToast('帳號密碼申請已送出！請等待總部核准。');
       setAuthMode('login'); setAuthPassword(''); setAuthError(''); 
-      setTimeout(() => window.scrollTo(0, 0), 50); 
     } else {
       const matchedUser = employees.find(emp => emp.store === store && emp.password === password);
       if (matchedUser) {
@@ -344,7 +354,6 @@ export default function App() {
                 setCurrentUserName(matchedUser.name);
                 setAuthPassword(''); 
                 setAuthError('');
-                setTimeout(() => window.scrollTo(0, 0), 50); 
               }
             },
             (error) => {
@@ -360,7 +369,6 @@ export default function App() {
           setCurrentUserName(matchedUser.name);
           setAuthPassword(''); 
           setAuthError('');
-          setTimeout(() => window.scrollTo(0, 0), 50);
         }
       } else {
         const isPending = pendingAccounts.some(pa => pa.store === store && pa.password === password);
@@ -373,31 +381,60 @@ export default function App() {
         }
       }
     }
-  };
+  }
 
-  const handleFileUpload = async (stepId: any, e: any) => {
+  async function handleBlockFileUpload(step: any, blockId: string, e: any) {
     const file = e.target.files[0];
     if (!file) return;
     setIsUploading(true); showToast("上傳中，請稍候...");
     try {
-      // 改回原始路徑，直接存入使用者的 Storage
-      const storageRef = ref(storage, `media/${stepId}_${Date.now()}`);
+      const storageRef = ref(storage, `media/${step.id}_${blockId}_${Date.now()}`);
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
-      await updateDoc(doc(db, 'learningSteps', stepId), { mediaUrl: url, fileName: file.name });
+
+      const blocks = getStepBlocks(step);
+      const newBlocks = blocks.map((b: any) => b.id === blockId ? { ...b, mediaUrl: url, fileName: file.name } : b);
+      await updateDoc(doc(db, 'learningSteps', step.id), { blocks: newBlocks });
       showToast("上傳成功！");
     } catch (err: any) { 
       console.error("Upload error:", err);
       showToast("上傳失敗：" + (err.message || "請檢查權限設定！")); 
     } finally { setIsUploading(false); e.target.value = null; }
-  };
+  }
 
-  const handleAvatarUpload = async (empId: any, e: any) => {
+  async function addBlock(step: any) {
+     const blocks = getStepBlocks(step);
+     const newBlocks = [...blocks, { id: Date.now().toString(), subtitle: '', description: '', mediaUrl: '', fileName: '' }];
+     await updateDoc(doc(db, 'learningSteps', step.id), { blocks: newBlocks });
+     showToast("已新增內容區塊！");
+  }
+
+  async function removeBlock(step: any, blockId: string) {
+     if (!window.confirm("確定要刪除這個內容區塊嗎？（刪除後無法復原）")) return;
+     const blocks = getStepBlocks(step);
+     const newBlocks = blocks.filter((b: any) => b.id !== blockId);
+     await updateDoc(doc(db, 'learningSteps', step.id), { blocks: newBlocks });
+     showToast("區塊已刪除！");
+  }
+
+  async function removeBlockMedia(step: any, blockId: string) {
+     if (!window.confirm("確定要移除此附件嗎？")) return;
+     const blocks = getStepBlocks(step);
+     const newBlocks = blocks.map((b: any) => b.id === blockId ? { ...b, mediaUrl: '', fileName: '' } : b);
+     await updateDoc(doc(db, 'learningSteps', step.id), { blocks: newBlocks });
+  }
+
+  async function updateBlockField(step: any, blockId: string, field: string, value: any) {
+     const blocks = getStepBlocks(step);
+     const newBlocks = blocks.map((b: any) => b.id === blockId ? { ...b, [field]: value } : b);
+     await updateDoc(doc(db, 'learningSteps', step.id), { blocks: newBlocks });
+  }
+
+  async function handleAvatarUpload(empId: any, e: any) {
     const file = e.target.files[0];
     if (!file) return;
     showToast("上傳大頭照中...");
     try {
-      // 改回原始路徑，直接存入使用者的 Storage
       const storageRef = ref(storage, `avatars/${empId}_${Date.now()}`);
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
@@ -407,9 +444,9 @@ export default function App() {
       console.error("Upload error:", err);
       showToast("上傳失敗：" + (err.message || "請檢查權限設定！")); 
     } finally { e.target.value = null; }
-  };
+  }
 
-  const startEditEmployee = (emp: any) => {
+  function startEditEmployee(emp: any) {
     setEditingEmployeeId(emp.id);
     setEditEmployeeData({ 
       name: emp.name, 
@@ -421,9 +458,9 @@ export default function App() {
       phone: emp.phone || '',
       mbti: emp.mbti || ''
     });
-  };
+  }
 
-  const saveEditEmployee = async (id: string) => {
+  async function saveEditEmployee(id: string) {
     if (!editEmployeeData.name.trim() || (editEmployeeData.password && editEmployeeData.password.length !== 6)) {
       showToast('資料格式不完整或密碼不為 6 碼！'); return;
     }
@@ -431,23 +468,26 @@ export default function App() {
       await updateDoc(doc(db, 'employees', id), editEmployeeData);
       setEditingEmployeeId(null); showToast('人員資料已成功更新！');
     } catch (error) { showToast('更新失敗，請檢查網路連線。'); }
-  };
+  }
 
-  const addLevelRule = () => {
+  function addLevelRule() {
     setEditingLevelRules([...editingLevelRules, { id: Date.now().toString(), min: 0, max: 0, levelName: '' }]);
-  };
-  const removeLevelRule = (id: string) => {
+  }
+  
+  function removeLevelRule(id: string) {
     setEditingLevelRules(editingLevelRules.filter((r: any) => r.id !== id));
-  };
-  const updateLevelRule = (id: string, field: string, value: any) => {
+  }
+  
+  function updateLevelRule(id: string, field: string, value: any) {
     setEditingLevelRules(editingLevelRules.map((r: any) => r.id === id ? { ...r, [field]: value } : r));
-  };
-  const saveLevelRulesConfig = async () => {
+  }
+  
+  async function saveLevelRulesConfig() {
     const parsedRules = editingLevelRules.map((r: any) => ({ ...r, min: parseInt(r.min) || 0, max: parseInt(r.max) || 0, levelName: r.levelName.toString() }));
     try { await setDoc(doc(db, 'config', 'global'), { levelRules: parsedRules }, { merge: true }); setLevelRules(parsedRules); showToast('學習升級門檻已儲存！'); } catch (e) { showToast('儲存失敗！'); }
-  };
+  }
 
-  const saveCategoriesConfig = async () => {
+  async function saveCategoriesConfig() {
     const validCategories = editingCategories.filter((c: any) => c.name.trim() !== '');
     try {
       await setDoc(doc(db, 'config', 'global'), { learningCategories: validCategories }, { merge: true });
@@ -458,16 +498,9 @@ export default function App() {
       setShowCategoryManager(false);
       showToast('分類已成功更新！');
     } catch(e) { showToast('分類儲存失敗！'); }
-  };
+  }
 
-  const displayCategories = categories.length > 0 ? categories : [{id: 'default', name: '綜合學習'}];
-  const currentActiveCatId = activeCategoryId || displayCategories[0].id;
-  const filteredSteps = learningSteps.filter(s => s.categoryId === currentActiveCatId || (!s.categoryId && currentActiveCatId === displayCategories[0].id));
-  const categoryProgress = typeof currentUserData?.completedLearning === 'object' 
-                           ? (currentUserData?.completedLearning[currentActiveCatId] || 0) 
-                           : (currentActiveCatId === displayCategories[0].id ? currentUserData?.completedLearning || 0 : 0);
-
-  const saveTaskRolesConfig = async () => {
+  async function saveTaskRolesConfig() {
     try {
       await setDoc(doc(db, 'config', 'global'), { taskRoles: editingTaskRoles }, { merge: true });
       setTaskRoles(editingTaskRoles);
@@ -475,9 +508,9 @@ export default function App() {
     } catch (e) {
       showToast('儲存權限失敗！');
     }
-  };
+  }
 
-  const saveTasksConfig = async () => {
+  async function saveTasksConfig() {
     try {
       const validTasks = editingTasks.filter((t: any) => t.name.trim() !== '');
       const taskIdsToKeep = validTasks.map(t => t.id);
@@ -498,9 +531,9 @@ export default function App() {
     } catch(e) {
       showToast('工作項目儲存失敗！');
     }
-  };
+  }
 
-  const incrementEmployeeTask = async (empId: string, taskId: string, taskName: string) => {
+  async function incrementEmployeeTask(empId: string, taskId: string, taskName: string) {
       const emp = employees.find(e => e.id === empId);
       if (!emp) return;
       const currentDetails = emp.tasksDetail || [];
@@ -516,9 +549,9 @@ export default function App() {
 
       await updateDoc(doc(db, 'employees', empId), { tasksDetail: newDetails });
       showToast('已增加 1 次！');
-  };
+  }
 
-  const editEmployeeTaskCount = async (empId: string, taskId: string, taskName: string, newCount: number) => {
+  async function editEmployeeTaskCount(empId: string, taskId: string, taskName: string, newCount: number) {
       const emp = employees.find(e => e.id === empId);
       if (!emp) return;
       const currentDetails = emp.tasksDetail || [];
@@ -533,7 +566,17 @@ export default function App() {
       }
 
       await updateDoc(doc(db, 'employees', empId), { tasksDetail: newDetails });
-  };
+  }
+
+  const canEdit = currentUserRole === 'super_admin';
+  const canEditTaskCount = canEdit || taskRoles.includes(currentUserRole); 
+  const currentUserData = employees.find(e => e.name === currentUserName);
+  const displayCategories = categories.length > 0 ? categories : [{id: 'default', name: '綜合學習'}];
+  const currentActiveCatId = activeCategoryId || displayCategories[0].id;
+  const filteredSteps = learningSteps.filter(s => s.categoryId === currentActiveCatId || (!s.categoryId && currentActiveCatId === displayCategories[0].id));
+  const categoryProgress = typeof currentUserData?.completedLearning === 'object' 
+                           ? (currentUserData?.completedLearning[currentActiveCatId] || 0) 
+                           : (currentActiveCatId === displayCategories[0].id ? currentUserData?.completedLearning || 0 : 0);
 
   if (!isAuthenticated) {
     return (
@@ -560,7 +603,7 @@ export default function App() {
               <div className="relative">
                 <select name="store" required defaultValue="" className="w-full p-3.5 border border-gray-200 bg-gray-50 rounded-xl font-bold text-gray-700 outline-none focus:border-indigo-500 appearance-none text-sm sm:text-base">
                   <option value="" disabled>請選擇門店...</option>
-                  {stores.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                  {stores.map(s => <option key={s.id} value={s.name}>{String(s.name)}</option>)}
                 </select>
                 <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-gray-400">
                   <svg className="w-4 h-4 fill-current" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>
@@ -576,7 +619,7 @@ export default function App() {
                     <div className="relative">
                       <select name="jobRole" required defaultValue="" className="w-full p-2.5 sm:p-3.5 border border-gray-200 bg-gray-50 rounded-xl font-bold text-gray-700 outline-none focus:border-indigo-500 appearance-none text-[11px] sm:text-sm">
                         <option value="" disabled>請選擇...</option>
-                        {jobRoles.map(role => <option key={role} value={role}>{role}</option>)}
+                        {jobRoles.map(role => <option key={role} value={role}>{String(role)}</option>)}
                       </select>
                       <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-gray-400">
                         <svg className="w-3 h-3 sm:w-4 sm:h-4 fill-current" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg>
@@ -645,7 +688,7 @@ export default function App() {
                 }`} 
                 placeholder={authMode === 'login' ? "請輸入6碼數字密碼" : "請設定6碼數字密碼"} 
               />
-              {authError && <p className="text-red-500 text-[10px] font-bold mt-1.5 ml-1 flex items-center animate-in slide-in-from-top-1"><XCircle c="w-3 h-3 mr-1" />{authError}</p>}
+              {authError && <p className="text-red-500 text-[10px] font-bold mt-1.5 ml-1 flex items-center animate-in slide-in-from-top-1"><XCircle c="w-3 h-3 mr-1" />{String(authError)}</p>}
             </div>
 
             <button type="submit" disabled={isCheckingGPS} className={`w-full bg-indigo-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-indigo-100 transition-all mt-2 tracking-widest ${isCheckingGPS ? 'opacity-70 cursor-not-allowed' : 'hover:bg-indigo-700'}`}>
@@ -682,7 +725,6 @@ export default function App() {
                     if(secretPwd==='0204') { 
                       setIsAuthenticated(true); setCurrentUserRole('super_admin'); setCurrentUserName('總部管理員'); 
                       setShowSecretModal(false); setAuthMode('login'); setSecretPwd(''); 
-                      setTimeout(() => window.scrollTo(0, 0), 50); 
                     } else { showToast('密碼錯誤！'); setSecretPwd(''); } 
                   }} className="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold">登入</button>
                 </div>
@@ -698,7 +740,7 @@ export default function App() {
   const displayEmployees = isProfileTabAdmin ? employees : employees.filter(e => e.name === currentUserName);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex justify-center font-sans relative">
+    <div className="h-screen h-[100dvh] bg-gray-50 flex justify-center font-sans overflow-hidden">
       <style>{customStyles}</style>
       
       {/* 總部專屬 GPS 設定彈出視窗 */}
@@ -715,7 +757,7 @@ export default function App() {
               {stores.map(store => (
                 <div key={store.id} className="bg-gray-50 p-4 rounded-xl border border-gray-200">
                   <div className="flex justify-between items-center mb-3">
-                    <h4 className="font-bold text-indigo-900 text-sm">{store.name}</h4>
+                    <h4 className="font-bold text-indigo-900 text-sm">{String(store.name)}</h4>
                     <button
                       onClick={() => {
                         if (!navigator.geolocation) {
@@ -765,9 +807,9 @@ export default function App() {
         </div>
       )}
 
-      <div className="w-full max-w-md bg-slate-50 relative min-h-screen shadow-xl flex flex-col overflow-hidden sm:border-x border-gray-200">
+      <div className="w-full max-w-md bg-slate-50 relative h-full shadow-xl flex flex-col overflow-hidden sm:border-x border-gray-200">
         
-        <header className="bg-white p-4 border-b border-gray-200 flex justify-between items-center sticky top-0 z-20">
+        <header className="bg-white p-4 border-b border-gray-200 flex justify-between items-center z-20 shrink-0">
           <div className="flex items-center gap-2">
             <div className="bg-indigo-600 p-1.5 rounded-lg text-white"><Store c="w-4 h-4" /></div>
             <h1 className="font-black text-gray-800 tracking-wide text-lg">{canEdit ? '總部學習系統' : '門店學習系統'}</h1>
@@ -788,7 +830,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 pb-24">
+        <main className="flex-1 overflow-y-auto p-4 pb-6 relative z-0 hide-scrollbar">
           
           {/* TAB 1.5: 待審核名單 (僅後台可見) */}
           {activeTab === 'pending' && canEdit && (
@@ -811,8 +853,8 @@ export default function App() {
                       <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500"></div>
                       <div className="flex justify-between items-start mb-4 pl-2">
                         <div>
-                          <h4 className="font-bold text-gray-800 text-lg">{pa.name}</h4>
-                          <p className="text-[11px] text-gray-500 font-bold mt-1 tracking-widest uppercase">{pa.store} | <span className="text-blue-600 font-bold">{pa.requestedRole}</span></p>
+                          <h4 className="font-bold text-gray-800 text-lg">{String(pa.name)}</h4>
+                          <p className="text-[11px] text-gray-500 font-bold mt-1 tracking-widest uppercase">{String(pa.store)} | <span className="text-blue-600 font-bold">{String(pa.requestedRole)}</span></p>
                         </div>
                       </div>
                       <div className="flex gap-3 pl-2">
@@ -847,11 +889,11 @@ export default function App() {
                       return (
                       <div key={pa.id} className="bg-gray-50 p-3 rounded-lg flex justify-between items-center border border-gray-100">
                         <div className="flex flex-col">
-                          <span className="font-bold text-gray-800 text-sm">申請人: {pa.employeeName}</span>
-                          <span className="text-[10px] text-gray-500 font-medium">分類: {categoryName}</span>
-                          <span className="text-[10px] text-gray-500 font-medium">項目: {pa.stepName}</span>
+                          <span className="font-bold text-gray-800 text-sm">申請人: {String(pa.employeeName)}</span>
+                          <span className="text-[10px] text-gray-500 font-medium">分類: {String(categoryName)}</span>
+                          <span className="text-[10px] text-gray-500 font-medium">項目: {String(pa.stepName)}</span>
                           {pa.status === 'first_approved' && (
-                            <span className="text-[10px] text-blue-500 font-bold mt-0.5 flex items-center"><CheckCircle2 c="w-3 h-3 mr-1" />初審通過 ({pa.firstApprover})</span>
+                            <span className="text-[10px] text-blue-500 font-bold mt-0.5 flex items-center"><CheckCircle2 c="w-3 h-3 mr-1" />初審通過 ({String(pa.firstApprover)})</span>
                           )}
                         </div>
                         <div>
@@ -977,7 +1019,7 @@ export default function App() {
                         }`}
                         style={{ zIndex: isActive ? 20 : displayCategories.length - i }}
                       >
-                        <span className="truncate block text-[13px]">{cat.name}</span>
+                        <span className="truncate block text-[13px]">{String(cat.name)}</span>
                       </div>
                     )
                   })}
@@ -989,8 +1031,8 @@ export default function App() {
                   {/* 後台專屬：新增當前分類的按鈕 */}
                   {canEdit && (
                     <div className="p-4 border-b border-gray-100 bg-gray-50/50 rounded-tr-xl">
-                      <button onClick={async () => await addDoc(collection(db, 'learningSteps'), { title: '新學習項目', description: '', categoryId: currentActiveCatId, status: 'locked', mediaUrl: '', fileName: '', createdAt: Date.now() })} className="w-full py-2 border border-dashed border-indigo-300 rounded-lg text-xs text-indigo-600 font-bold flex justify-center items-center hover:bg-indigo-50 transition-colors">
-                        <PlusCircle c="w-4 h-4 mr-1.5"/> 於「{displayCategories.find(c=>c.id === currentActiveCatId)?.name}」新增內容
+                      <button onClick={async () => await addDoc(collection(db, 'learningSteps'), { title: '新學習項目', blocks: [{ id: Date.now().toString(), subtitle: '', description: '', mediaUrl: '', fileName: '' }], categoryId: currentActiveCatId, status: 'locked', createdAt: Date.now() })} className="w-full py-2 border border-dashed border-indigo-300 rounded-lg text-xs text-indigo-600 font-bold flex justify-center items-center hover:bg-indigo-50 transition-colors">
+                        <PlusCircle c="w-4 h-4 mr-1.5"/> 於「{String(displayCategories.find(c=>c.id === currentActiveCatId)?.name || '')}」新增內容
                       </button>
                     </div>
                   )}
@@ -1011,32 +1053,54 @@ export default function App() {
                             <div className="flex items-center space-x-2">
                               <div className="font-black text-gray-300 text-lg w-5">{index + 1}.</div>
                               <div className="flex flex-1 gap-2 pr-6">
-                                <input type="text" defaultValue={step.title} onBlur={e => updateDoc(doc(db, 'learningSteps', step.id), { title: e.target.value })} className="flex-1 p-2 border border-gray-200 rounded-lg font-bold text-gray-800 bg-gray-50 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white" placeholder="請輸入標題"/>
+                                <input type="text" defaultValue={step.title} onBlur={e => updateDoc(doc(db, 'learningSteps', step.id), { title: e.target.value })} className="flex-1 p-2 border border-gray-200 rounded-lg font-bold text-gray-800 bg-gray-50 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white" placeholder="請輸入大標題"/>
                               </div>
                             </div>
                             
-                            <div className="pl-7">
-                              <textarea defaultValue={step.description} onBlur={e => updateDoc(doc(db, 'learningSteps', step.id), { description: e.target.value })} className="w-full p-3 border border-gray-200 rounded-lg text-xs text-gray-700 bg-gray-50 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white min-h-[80px]" placeholder="請輸入學習內容..." />
-                            </div>
-                            
-                            <div className="pl-7 flex items-center space-x-3 mt-1">
-                              <label className={`flex items-center justify-center bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-2 rounded-lg cursor-pointer transition-colors text-xs font-bold shadow-sm ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                                <UploadCloud c="w-4 h-4 mr-1.5 text-indigo-500" />{isUploading ? '上傳中...' : '上傳附件'}
-                                <input type="file" accept="image/*,video/*" className="hidden" disabled={isUploading} onChange={(e) => handleFileUpload(step.id, e)} />
-                              </label>
-                              <span className="text-xs text-gray-500 truncate max-w-[150px]">{step.fileName || (step.mediaUrl ? '已上傳' : '無附件')}</span>
-                            </div>
+                            <div className="pl-7 mt-3 space-y-4 border-l-2 border-indigo-100 ml-2 pb-2">
+                              {getStepBlocks(step).map((block: any, bIndex: number) => (
+                                <div key={block.id} className="bg-gray-50/50 p-3 rounded-xl border border-gray-100 relative">
+                                  <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-bold text-indigo-400">區塊 {bIndex + 1}</span>
+                                    <button onClick={() => removeBlock(step, block.id)} className="text-red-400 hover:text-red-600 bg-red-50 p-1 rounded transition-colors" title="刪除此區塊"><Trash2 c="w-3.5 h-3.5" /></button>
+                                  </div>
+                                  
+                                  <input type="text" defaultValue={block.subtitle || ''} onBlur={e => updateBlockField(step, block.id, 'subtitle', e.target.value)} className="w-full p-2 border border-indigo-100 rounded-lg font-bold text-indigo-700 bg-indigo-50/30 text-xs outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white mb-2" placeholder="請輸入子標題（選填）"/>
+                                  
+                                  <textarea defaultValue={block.description} onBlur={e => updateBlockField(step, block.id, 'description', e.target.value)} className="w-full p-3 border border-gray-200 rounded-lg text-xs text-gray-700 bg-white outline-none focus:ring-2 focus:ring-indigo-500 min-h-[80px]" placeholder="請輸入學習內容..." />
+                                
+                                  <div className="flex items-center space-x-3 mt-2">
+                                    <label className={`flex items-center justify-center bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-2 rounded-lg cursor-pointer transition-colors text-xs font-bold shadow-sm ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                                      <UploadCloud c="w-4 h-4 mr-1.5 text-indigo-500" />{isUploading ? '上傳中...' : '上傳附件'}
+                                      <input type="file" accept="image/*,video/*" className="hidden" disabled={isUploading} onChange={(e) => handleBlockFileUpload(step, block.id, e)} />
+                                    </label>
+                                    <span className="text-xs text-gray-500 truncate max-w-[150px]">{String(block.fileName || (block.mediaUrl ? '已上傳' : '無附件'))}</span>
+                                  </div>
 
-                            {step.mediaUrl && (
-                              <div className="pl-7 mt-2 relative inline-block">
-                                {(step.fileName && step.fileName.match(/\.(mp4|webm|ogg|mov|m4v)$/i)) || step.mediaUrl.match(/\.(mp4|webm|ogg|mov|m4v)/i) ? (
-                                  <video src={step.mediaUrl} controls className="max-h-32 rounded border border-gray-200" />
-                                ) : ( 
-                                  <img src={step.mediaUrl} onClick={() => setFullscreenImage(step.mediaUrl)} className="max-h-32 object-contain rounded border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" alt="預覽" title="點擊放大" /> 
-                                )}
-                                <button onClick={() => updateDoc(doc(db, 'learningSteps', step.id), { mediaUrl: '', fileName: '' })} className="absolute top-1 right-1 bg-red-500/90 text-white px-2 py-1 rounded text-[10px] font-bold backdrop-blur-sm shadow-sm">移除</button>
+                                  {block.mediaUrl && (
+                                    <div className="mt-3 relative inline-block">
+                                      {(block.fileName && block.fileName.match(/\.(mp4|webm|ogg|mov|m4v)$/i)) || block.mediaUrl.match(/\.(mp4|webm|ogg|mov|m4v)/i) ? (
+                                        <video src={block.mediaUrl} controls className="max-h-32 rounded border border-gray-200" />
+                                      ) : ( 
+                                        <img src={block.mediaUrl} onClick={() => setFullscreenImage(block.mediaUrl)} className="max-h-32 object-contain rounded border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity" alt="預覽" title="點擊放大" /> 
+                                      )}
+                                      <button onClick={() => removeBlockMedia(step, block.id)} className="absolute top-1 right-1 bg-red-500/90 text-white px-2 py-1 rounded text-[10px] font-bold backdrop-blur-sm shadow-sm">移除</button>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                              
+                              <button onClick={() => addBlock(step)} className="w-full py-2.5 bg-indigo-50/50 border border-indigo-200 border-dashed rounded-lg text-xs text-indigo-600 font-bold flex justify-center items-center hover:bg-indigo-100 transition-colors">
+                                <PlusCircle c="w-4 h-4 mr-1.5"/> 新增內容區塊
+                              </button>
+                              
+                              {/* 儲存按鈕 - 安撫使用者情緒，其實上述操作都已經即時寫入 */}
+                              <div className="flex justify-end pt-2 mt-2">
+                                 <button onClick={() => showToast("所有內容已安全儲存！")} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold shadow-sm hover:bg-indigo-700 transition-colors flex items-center">
+                                   <CheckCircle2 c="w-3.5 h-3.5 mr-1" /> 儲存學習項目
+                                 </button>
                               </div>
-                            )}
+                            </div>
                           </div>
                         ))
                       ) : (
@@ -1071,7 +1135,7 @@ export default function App() {
                                   <div className="bg-white border border-green-200 rounded-xl p-4 shadow-sm opacity-70 hover:opacity-100 transition-opacity">
                                     <div className="flex items-center gap-2">
                                       <span className="bg-green-100 text-green-700 font-black text-[10px] px-2 py-1 rounded">Lv.{index + 1}</span>
-                                      <h3 className="font-bold text-gray-700 text-sm line-clamp-1">{step.title}</h3>
+                                      <h3 className="font-bold text-gray-700 text-sm line-clamp-1">{String(step.title)}</h3>
                                       <span className="ml-auto text-[10px] font-bold text-green-600 flex items-center bg-green-50 px-2 py-0.5 rounded-full">
                                         <CheckCircle2 c="w-3 h-3 mr-1"/>已通過
                                       </span>
@@ -1089,29 +1153,38 @@ export default function App() {
                                   </div>
                                   <div className="bg-white border-2 border-indigo-400 rounded-xl p-5 shadow-lg relative overflow-hidden">
                                     <div className="absolute top-0 left-0 w-full h-1 bg-indigo-500"></div>
-                                    <div className="flex items-center gap-2 mb-3">
+                                    <div className="flex items-center gap-2 mb-4">
                                       <span className="bg-indigo-100 text-indigo-700 font-black text-xs px-2 py-1 rounded">Lv.{index + 1}</span>
-                                      <h3 className="font-bold text-indigo-900 text-lg">{step.title}</h3>
+                                      <h3 className="font-bold text-indigo-900 text-lg">{String(step.title)}</h3>
                                       <span className="ml-auto text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full animate-bounce">目前進度</span>
                                     </div>
-                                    <p className="text-sm text-gray-600 mb-4 whitespace-pre-wrap leading-relaxed">{step.description}</p>
                                     
-                                    {step.mediaUrl && (
-                                      <div className="mt-3 mb-4 rounded-lg overflow-hidden border border-gray-100 bg-gray-50 flex justify-center">
-                                        {(step.fileName && step.fileName.match(/\.(mp4|webm|ogg|mov|m4v)$/i)) || step.mediaUrl.match(/\.(mp4|webm|ogg|mov|m4v)/i) ? (
-                                          <video src={step.mediaUrl} controls className="max-h-48 w-full object-contain" />
-                                        ) : ( 
-                                          <img src={step.mediaUrl} onClick={() => setFullscreenImage(step.mediaUrl)} className="max-h-48 w-full object-contain cursor-pointer hover:opacity-80 transition-opacity" alt="教材" title="點擊放大" /> 
-                                        )}
-                                      </div>
-                                    )}
+                                    {/* 組合區塊：子標題 -> 內容 -> 圖片 迭代顯示 */}
+                                    <div className="space-y-4 mb-4">
+                                      {getStepBlocks(step).map((block: any, bIndex: number) => (
+                                        <div key={block.id} className="bg-indigo-50/40 rounded-xl p-4 border border-indigo-100/50 shadow-inner inset-shadow">
+                                          {block.subtitle && <h4 className="font-bold text-indigo-800 text-base mb-2 border-b border-indigo-100/60 pb-2">{String(block.subtitle)}</h4>}
+                                          <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{String(block.description)}</p>
+                                          
+                                          {block.mediaUrl && (
+                                            <div className="mt-3 rounded-lg overflow-hidden border border-gray-100 bg-white flex justify-center shadow-sm">
+                                              {(block.fileName && block.fileName.match(/\.(mp4|webm|ogg|mov|m4v)$/i)) || block.mediaUrl.match(/\.(mp4|webm|ogg|mov|m4v)/i) ? (
+                                                <video src={block.mediaUrl} controls className="max-h-48 w-full object-contain" />
+                                              ) : ( 
+                                                <img src={block.mediaUrl} onClick={() => setFullscreenImage(block.mediaUrl)} className="max-h-48 w-full object-contain cursor-pointer hover:opacity-80 transition-opacity" alt="教材" title="點擊放大" /> 
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
 
                                     <div className="mt-4 pt-4 border-t border-gray-100">
                                       {pendingApproval ? (
                                         <div className={`py-4 rounded-xl text-sm font-bold flex justify-center items-center border ${pendingApproval.status === 'first_approved' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-orange-50 text-orange-600 border-orange-200'}`}>
                                           <span className="animate-pulse flex items-center">
                                             <Bell c="w-5 h-5 mr-2"/>
-                                            {pendingApproval.status === 'first_approved' ? `初審已過 (${pendingApproval.firstApprover})，待後台複審...` : '審核中，請通知同事初審...'}
+                                            {pendingApproval.status === 'first_approved' ? `初審已過 (${String(pendingApproval.firstApprover)})，待後台複審...` : '審核中，請通知同事初審...'}
                                           </span>
                                         </div>
                                       ) : (
@@ -1185,7 +1258,7 @@ export default function App() {
                           }}
                           className="w-3.5 h-3.5 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
                         />
-                        <span className="text-[11px] font-bold">{role}</span>
+                        <span className="text-[11px] font-bold">{String(role)}</span>
                       </label>
                     ))}
                   </div>
@@ -1232,7 +1305,7 @@ export default function App() {
                                           }`}
                                           style={{ zIndex: isActive ? 20 : tasks.length - i }}
                                       >
-                                          <span className="truncate block text-[13px]">{task.name}</span>
+                                          <span className="truncate block text-[13px]">{String(task.name)}</span>
                                       </div>
                                   )
                               })}
@@ -1260,14 +1333,14 @@ export default function App() {
                                                       {emp.avatarUrl ? <img src={emp.avatarUrl} className="w-full h-full object-cover"/> : <User c="w-5 h-5 text-gray-400" />}
                                                   </div>
                                                   <div>
-                                                      <h4 className="font-bold text-gray-800 text-sm">{emp.name}</h4>
+                                                      <h4 className="font-bold text-gray-800 text-sm">{String(emp.name)}</h4>
                                                       <RoleBadge role={emp.role} />
                                                   </div>
                                               </div>
                                               <div className="flex items-center gap-3">
                                                   <div className="text-right mr-1">
                                                       <span className="text-[10px] text-gray-500 block font-bold">完成次數</span>
-                                                      <span className="font-black text-lg text-indigo-600">{count}</span>
+                                                      <span className="font-black text-lg text-indigo-600">{Number(count)}</span>
                                                   </div>
                                                   {/* 總部管理員 (加減修改) */}
                                                   {canEdit ? (
@@ -1321,7 +1394,7 @@ export default function App() {
                   <div className="flex flex-wrap gap-2 mb-4">
                     {stores.map(s => (
                       <span key={s.id} className="bg-gray-50 text-gray-700 px-3 py-1 rounded border border-gray-200 text-xs font-bold flex items-center gap-1.5 shadow-sm">
-                        {s.name}
+                        {String(s.name)}
                         <button onClick={()=>deleteDoc(doc(db,'stores',s.id))} className="text-gray-400 hover:text-red-500 transition-colors"><XCircle c="w-3.5 h-3.5" /></button>
                       </span>
                     ))}
@@ -1372,13 +1445,13 @@ export default function App() {
                                  <div>
                                    <label className="text-[10px] font-bold text-blue-600 mb-1 block">所屬門店</label>
                                    <select value={editEmployeeData.store} onChange={(e) => setEditEmployeeData({...editEmployeeData, store: e.target.value})} className="w-full p-2.5 border border-blue-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                                     {stores.map(store => <option key={store.id} value={store.name}>{store.name}</option>)}
+                                     {stores.map(store => <option key={store.id} value={store.name}>{String(store.name)}</option>)}
                                    </select>
                                  </div>
                                  <div>
                                    <label className="text-[10px] font-bold text-blue-600 mb-1 block">職位權限</label>
                                    <select value={editEmployeeData.role} onChange={(e) => setEditEmployeeData({...editEmployeeData, role: e.target.value})} className="w-full p-2.5 border border-blue-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                                     {jobRoles.map(role => <option key={role} value={role}>{role}</option>)}
+                                     {jobRoles.map(role => <option key={role} value={role}>{String(role)}</option>)}
                                    </select>
                                  </div>
                                </div>
@@ -1432,9 +1505,9 @@ export default function App() {
                                     </label>
                                   </div>
                                   <div>
-                                    <h3 className="font-black text-gray-800 text-xl sm:text-2xl tracking-wide mb-1">{emp.name}</h3>
+                                    <h3 className="font-black text-gray-800 text-xl sm:text-2xl tracking-wide mb-1">{String(emp.name)}</h3>
                                     <RoleBadge role={emp.role} />
-                                    <span className="text-xs text-gray-500 font-bold ml-2">{emp.store}</span>
+                                    <span className="text-xs text-gray-500 font-bold ml-2">{String(emp.store)}</span>
                                   </div>
                                 </div>
                                 
@@ -1457,7 +1530,7 @@ export default function App() {
                                    </div>
                                    <div className="text-right">
                                      <p className="text-[11px] font-bold text-white/80 mb-1 tracking-widest">所屬職位</p>
-                                     <p className="text-xl font-bold drop-shadow-md">{emp.role}</p>
+                                     <p className="text-xl font-bold drop-shadow-md">{String(emp.role)}</p>
                                    </div>
                                 </div>
                               </div>
@@ -1466,15 +1539,15 @@ export default function App() {
                               <div className="bg-gray-50 rounded-xl border border-gray-100 p-1 mb-4">
                                  <div className="flex justify-between items-center p-3 border-b border-gray-200/60">
                                    <span className="text-xs text-gray-500 font-bold">出生年月日</span>
-                                   <span className="text-sm font-bold text-gray-800">{emp.birthdate || '未填寫'}</span>
+                                   <span className="text-sm font-bold text-gray-800">{String(emp.birthdate || '未填寫')}</span>
                                  </div>
                                  <div className="flex justify-between items-center p-3 border-b border-gray-200/60">
                                    <span className="text-xs text-gray-500 font-bold">到職日</span>
-                                   <span className="text-sm font-bold text-gray-800">{emp.hireDate || '未填寫'}</span>
+                                   <span className="text-sm font-bold text-gray-800">{String(emp.hireDate || '未填寫')}</span>
                                  </div>
                                  <div className="flex justify-between items-center p-3 border-b border-gray-200/60">
                                    <span className="text-xs text-gray-500 font-bold">聯絡電話</span>
-                                   <span className="text-sm font-bold text-gray-800">{emp.phone || '未填寫'}</span>
+                                   <span className="text-sm font-bold text-gray-800">{String(emp.phone || '未填寫')}</span>
                                  </div>
                                  <div className="flex justify-between items-center p-3">
                                    <span className="text-xs text-gray-500 font-bold">人格特質</span>
@@ -1487,12 +1560,12 @@ export default function App() {
                                 <div className="bg-white rounded-lg border border-gray-100 p-3 z-10 shadow-sm mt-1">
                                    <div className="flex justify-between items-center mb-2">
                                       <p className="text-[10px] text-gray-400 font-bold">詳細工作統計：</p>
-                                      <p className="text-[10px] text-gray-400 font-bold">總計 {totalTasks} 次</p>
+                                      <p className="text-[10px] text-gray-400 font-bold">總計 {Number(totalTasks)} 次</p>
                                    </div>
                                    <div className="flex flex-wrap gap-2">
                                      {emp.tasksDetail.map((t: any) => (
                                        <span key={t.id} className="text-xs bg-gray-50 border border-gray-100 text-gray-600 px-2 py-1 rounded-md flex items-center font-medium">
-                                         {t.name} <span className="font-black text-blue-600 ml-1.5">{t.count}</span>
+                                         {String(t.name)} <span className="font-black text-blue-600 ml-1.5">{Number(t.count)}</span>
                                        </span>
                                      ))}
                                    </div>
@@ -1509,7 +1582,7 @@ export default function App() {
           )}
         </main>
 
-        <nav className="absolute bottom-0 w-full bg-white border-t border-gray-200 flex justify-around items-center h-16 pb-safe shadow-lg z-30">
+        <nav className="bg-white border-t border-gray-200 flex justify-around items-center h-16 pb-safe shadow-[0_-5px_10px_rgba(0,0,0,0.02)] z-30 shrink-0">
           <button onClick={() => setActiveTab('learning')} className={`flex flex-col items-center gap-1 flex-1 ${activeTab === 'learning' ? 'text-indigo-600' : 'text-gray-400'}`}>
             <BookOpen c={`w-5 h-5 ${activeTab === 'learning' ? 'fill-indigo-50' : ''}`} /><span className="text-[10px] font-bold">學習審核</span>
           </button>
@@ -1534,7 +1607,7 @@ export default function App() {
 
       {toast && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-5 py-2.5 rounded-lg z-[100] text-xs font-bold shadow-xl animate-in fade-in slide-in-from-bottom-2">
-          {toast}
+          {String(toast)}
         </div>
       )}
     </div>
