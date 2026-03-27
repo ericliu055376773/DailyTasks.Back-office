@@ -1026,7 +1026,7 @@ export default function App() {
 
                             {step.mediaUrl && (
                               <div className="pl-7 mt-2 relative inline-block">
-                                {step.mediaUrl.match(/\.(mp4|webm|ogg|MOV|m4v)/i) || (step.mediaUrl.includes('firebasestorage') && step.mediaUrl.includes('media%2F')) ? (
+                                {(step.fileName && step.fileName.match(/\.(mp4|webm|ogg|mov|m4v)$/i)) || step.mediaUrl.match(/\.(mp4|webm|ogg|mov|m4v)/i) ? (
                                   <video src={step.mediaUrl} controls className="max-h-32 rounded border border-gray-200" />
                                 ) : ( <img src={step.mediaUrl} className="max-h-32 object-contain rounded border border-gray-200" alt="預覽" /> )}
                                 <button onClick={() => updateDoc(doc(db, 'learningSteps', step.id), { mediaUrl: '', fileName: '' })} className="absolute top-1 right-1 bg-red-500/90 text-white px-2 py-1 rounded text-[10px] font-bold backdrop-blur-sm shadow-sm">移除</button>
@@ -1093,7 +1093,7 @@ export default function App() {
                                     
                                     {step.mediaUrl && (
                                       <div className="mt-3 mb-4 rounded-lg overflow-hidden border border-gray-100 bg-gray-50 flex justify-center">
-                                        {step.mediaUrl.match(/\.(mp4|webm|ogg|MOV|m4v)/i) || (step.mediaUrl.includes('firebasestorage') && step.mediaUrl.includes('media%2F')) ? (
+                                        {(step.fileName && step.fileName.match(/\.(mp4|webm|ogg|mov|m4v)$/i)) || step.mediaUrl.match(/\.(mp4|webm|ogg|mov|m4v)/i) ? (
                                           <video src={step.mediaUrl} controls className="max-h-48 w-full object-contain" />
                                         ) : ( <img src={step.mediaUrl} className="max-h-48 w-full object-contain" alt="教材" /> )}
                                       </div>
